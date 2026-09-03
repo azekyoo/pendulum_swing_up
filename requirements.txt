@@ -3,3 +3,4 @@ torch>=2.4
 pygame-ce>=2.5
 matplotlib>=3.8
 pytest>=8.0
+pillow>=10.0

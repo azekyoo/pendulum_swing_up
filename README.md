@@ -7,16 +7,12 @@ side by side.
 
 Built as the demo for a lightning talk on reinforcement learning.
 
-```
-                    ↑ goal: upright and still
-                    │
-                    ●
-                  ╱
-       ┌────────┐╱          rod is NOT actuated
-       │  cart  │           the only control is a horizontal force on the cart
-       └──○──○──┘
-   ╞════════════════════╡   rail, ±2.4 m, hitting the end ends the episode
-```
+![The trained agent swinging the rod up and balancing it](docs/agent-balancing.gif)
+
+The rod is unpowered. The only control is a horizontal force on the cart, the rail
+is 2.4 m either side, and the force limit is too small to lift the rod directly —
+so it has to be swung up and then caught. The amber bar at the bottom is the
+force being applied; the rod turns green when it is genuinely balanced.
 
 ## What this is, in plain terms
 
@@ -59,6 +55,8 @@ Here is everything in this repo, in order:
 balancing reliably by attempt 70 — roughly two minutes of laptop CPU time. It plateaued at
 a score of ~448 out of a realistic maximum of ~450.
 
+![Training curve: flat until episode 30, a dip near 50, then a steep rise to a plateau](docs/training-curve.png)
+
 For comparison, `swingup/baseline.py` is the traditional engineered solution to the same
 problem. It scores about the same, ~449. The interesting difference is not the score but
 what each approach needed from a human, which is the table further down.
@@ -72,6 +70,7 @@ python train.py --episodes 400 --run demo    # ~15 min on a CPU
 python play.py  --run demo                   # interactive viewer
 python export_replay.py --run demo           # build the web replay
 python plot_metrics.py --run demo --dark     # slide-ready training curve
+python make_gifs.py                          # README animations, from the replay
 ```
 
 Then open `web/index.html` in a browser (it works straight off the filesystem, no server).
@@ -105,7 +104,7 @@ on purpose: this is an energy-shaping task, and Euler's per-step energy drift is
 exactly the kind of thing an RL agent finds and exploits. The test suite pins the
 drift at under `1e-5` J over 50 simulated seconds.
 
-### On air resistance — you asked whether it was a bad idea
+### On air resistance — is it a bad idea?
 
 It was a good idea, kept, but small. Two viscous terms: `b_pole = 0.02` at the hinge
 and `b_cart = 0.05` on the rail.
@@ -196,6 +195,13 @@ runs/demo/
 
 Episode 0 is saved **before any learning**, so the untrained flailing policy is always
 available as the "before" clip.
+
+![Episode 0, episode 40 and episode 400 playing side by side](docs/learning-stages.gif)
+
+*Three checkpoints, same starting state, same random seed, played in lockstep. Left:
+random pushes, off the rail in two seconds. Middle: it reaches the top but sails
+straight past it. Right: it arrives and holds. The only difference between the three
+is how many episodes of practice the policy had.*
 
 `export_replay.py` picks story beats rather than evenly spaced episodes — untrained,
 first real swing, first time upright, first balance, best — because "the first time it
