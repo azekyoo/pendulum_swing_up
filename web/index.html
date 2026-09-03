@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pendulum Swing-Up</title>
+<style>
+  :root{
+    --bg:#10121a; --panel:#181b24; --panel-2:#1f2330; --line:#2a2f3d;
+    --ink:#e8ecf4; --dim:#8a94ae; --accent:#5eb0ff; --good:#56d694;
+    --warn:#ffb054; --bad:#f0626e;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+  .wrap{max-width:1240px;margin:0 auto;padding:28px 22px 64px}
+  h1{font-size:24px;margin:0 0 4px;letter-spacing:-.02em}
+  .sub{color:var(--dim);margin:0 0 22px}
+  .sub code{font-family:var(--mono);color:var(--accent)}
+
+  .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+       background:var(--panel);border:1px solid var(--line);border-radius:10px;
+       padding:10px 12px;margin-bottom:14px}
+  button{font:inherit;color:var(--ink);background:var(--panel-2);
+         border:1px solid var(--line);border-radius:7px;padding:6px 12px;cursor:pointer}
+  button:hover{border-color:var(--accent);color:var(--accent)}
+  button.on{background:var(--accent);border-color:var(--accent);color:#0b1018;font-weight:600}
+  .chip{font-family:var(--mono);font-size:12.5px}
+  .chip .ep{color:var(--dim);margin-left:6px}
+  .chip.on .ep{color:#0b1018;opacity:.7}
+  .grow{flex:1}
+  .lbl{color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.08em}
+  input[type=range]{accent-color:var(--accent);vertical-align:middle}
+  #scrub{flex:1;min-width:220px}
+  .tick{font-family:var(--mono);color:var(--dim);font-size:12.5px;min-width:118px}
+
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+        padding:12px;display:flex;flex-direction:column;gap:8px}
+  .card h2{font-size:14.5px;margin:0;display:flex;align-items:baseline;gap:8px}
+  .card h2 .tag{font-family:var(--mono);font-size:11.5px;color:var(--dim);font-weight:400}
+  .badge{font-family:var(--mono);font-size:11px;padding:2px 7px;border-radius:99px;
+         border:1px solid var(--line);color:var(--dim)}
+  .badge.good{color:var(--good);border-color:#2c5a45}
+  .badge.bad{color:var(--bad);border-color:#5c2b31}
+  canvas{width:100%;display:block;border-radius:8px;background:#0c0e15}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:2px 14px;
+         font-family:var(--mono);font-size:12px;color:var(--dim)}
+  .stats b{color:var(--ink);font-weight:500;float:right}
+  .meter{height:6px;background:var(--panel-2);border-radius:99px;overflow:hidden}
+  .meter i{display:block;height:100%;width:0;background:var(--good);
+           border-radius:99px;transition:width .06s linear}
+
+  .curve{margin-top:22px;background:var(--panel);border:1px solid var(--line);
+         border-radius:12px;padding:14px 16px 6px}
+  .curve h2{font-size:15px;margin:0 0 2px}
+  .curve p{color:var(--dim);margin:0 0 8px;font-size:13px}
+  .curve svg{width:100%;height:230px;overflow:visible}
+  .axis{stroke:var(--line);stroke-width:1}
+  .axis-text{fill:var(--dim);font-family:var(--mono);font-size:11px}
+  .dot{fill:var(--accent);cursor:pointer}
+  .dot:hover{fill:#fff}
+  .note{color:var(--dim);font-size:12.5px;margin:16px 0 0}
+  .missing{background:var(--panel);border:1px solid var(--bad);border-radius:12px;
+           padding:18px;font-family:var(--mono);font-size:13px;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Pendulum Swing-Up &mdash; what the agent learned, epoch by epoch</h1>
+  <p class="sub" id="subtitle">loading&hellip;</p>
+  <div id="app"></div>
+</div>
+
+<script src="replay.js"></script>
+<script>
+const D = window.REPLAY_DATA;
+const app = document.getElementById("app");
+
+if (!D) {
+  app.innerHTML = `<div class="missing">replay.js not found.<br><br>
+    Generate it first:<br>&nbsp;&nbsp;python train.py --run demo<br>
+    &nbsp;&nbsp;python export_replay.py --run demo</div>`;
+  document.getElementById("subtitle").textContent = "no replay data";
+  throw new Error("no data");
+}
+
+const P = D.spec.physics, C = D.spec.config;
+const MAXSTEP = Math.max(...D.clips.map(c => c.frames.length)) - 1;
+document.getElementById("subtitle").innerHTML =
+  `cart force limit <code>&plusmn;${P.force_mag} N</code> &middot;
+   rail <code>&plusmn;${P.x_limit} m</code> &middot;
+   rod <code>${P.pole_length} m</code> &middot;
+   control <code>${Math.round(1 / P.dt)} Hz</code> &middot;
+   damping <code>${P.b_pole} / ${P.b_cart}</code> &middot;
+   run <code>${D.run}</code>`;
+
+// Start with the three-clip story: nothing, something, mastery.
+const selected = new Set();
+const pick = l => D.clips.findIndex(c => c.label === l);
+[pick("untrained"), pick("first time upright"), pick("best")]
+  .filter(i => i >= 0).forEach(i => selected.add(i));
+if (!selected.size) D.clips.slice(0, 3).forEach((_, i) => selected.add(i));
+
+let step = 0, playing = true, speed = 1, acc = 0;
+
+// ------------------------------------------------------------------- markup
+app.innerHTML = `
+  <div class="bar" id="chips"></div>
+  <div class="bar">
+    <button id="play"></button>
+    <button id="rewind">&#8676; restart</button>
+    <span class="lbl">step</span>
+    <input type="range" id="scrub" min="0" max="${MAXSTEP}" value="0">
+    <span class="tick" id="tick"></span>
+    <span class="lbl">speed</span>
+    <button class="spd" data-s="0.25">&frac14;&times;</button>
+    <button class="spd" data-s="0.5">&frac12;&times;</button>
+    <button class="spd on" data-s="1">1&times;</button>
+    <button class="spd" data-s="2">2&times;</button>
+  </div>
+  <div class="grid" id="grid"></div>
+  <div class="curve">
+    <h2>Training curve</h2>
+    <p>Reward per training episode. Dots are exported checkpoints &mdash; click one to load its clip.</p>
+    <svg id="chart" viewBox="0 0 900 230" preserveAspectRatio="none"></svg>
+  </div>
+  <p class="note">Every clip starts from the identical hanging state and the same random seed,
+     so the only difference between panels is how much training the policy had.</p>
+`;
+
+const chips = document.getElementById("chips");
+D.clips.forEach((c, i) => {
+  const b = document.createElement("button");
+  b.className = "chip";
+  const ep = c.episode === null ? c.kind : "ep " + c.episode;
+  b.innerHTML = `${c.label}<span class="ep">${ep}</span>`;
+  b.onclick = () => {
+    selected.has(i) ? selected.delete(i) : selected.add(i);
+    if (!selected.size) selected.add(i);
+    syncChips(); buildGrid();
+  };
+  chips.appendChild(b);
+});
+const clear = document.createElement("button");
+clear.textContent = "compare all";
+clear.onclick = () => { D.clips.forEach((_, i) => selected.add(i)); syncChips(); buildGrid(); };
+chips.appendChild(clear);
+
+function syncChips() {
+  [...chips.children].forEach((b, i) => {
+    if (i < D.clips.length) b.classList.toggle("on", selected.has(i));
+  });
+}
+
+// --------------------------------------------------------------------- panels
+let panels = [];
+function buildGrid() {
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+  panels = [...selected].sort((a, b) => a - b).map(idx => {
+    const c = D.clips[idx];
+    const card = document.createElement("div");
+    card.className = "card";
+    const tag = c.episode === null
+      ? c.kind
+      : `episode ${c.episode} &middot; ${c.step.toLocaleString()} env steps`;
+    card.innerHTML = `
+      <h2>${c.label}<span class="tag">${tag}</span></h2>
+      <canvas></canvas>
+      <div class="meter"><i></i></div>
+      <div class="stats">
+        <span>reward<b class="r">0</b></span>
+        <span>angle<b class="a">0&deg;</b></span>
+        <span>upright<b class="u">0%</b></span>
+        <span>force<b class="f">0 N</b></span>
+      </div>`;
+    grid.appendChild(card);
+    const canvas = card.querySelector("canvas");
+    return {
+      clip: c, canvas, ctx: canvas.getContext("2d"),
+      meter: card.querySelector(".meter i"),
+      r: card.querySelector(".r"), a: card.querySelector(".a"),
+      u: card.querySelector(".u"), f: card.querySelector(".f"),
+      head: card.querySelector("h2"),
+    };
+  });
+  resize();
+}
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  panels.forEach(p => {
+    const w = p.canvas.clientWidth || 340;
+    const h = Math.round(w * 0.62);
+    p.canvas.width = w * dpr;
+    p.canvas.height = h * dpr;
+    p.canvas.style.height = h + "px";
+    p.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    p.view = { w, h };
+  });
+  render();
+}
+window.addEventListener("resize", resize);
+
+// ------------------------------------------------------------------ rendering
+function drawPanel(p) {
+  const { ctx, view, clip } = p;
+  const { w, h } = view;
+  const i = Math.min(step, clip.frames.length - 1);
+  const [x, xd, th, thd] = clip.frames[i];
+  const action = clip.actions[Math.min(i, clip.actions.length - 1)] ?? 0;
+
+  const groundY = h * 0.70;
+  const scale = (w - 34) / (2 * P.x_limit + 0.8);
+  const SX = wx => w / 2 + wx * scale;
+  const SY = wy => groundY - wy * scale;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // goal line at the height of a fully upright rod
+  ctx.strokeStyle = "#25402f"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(10, SY(P.pole_length)); ctx.lineTo(w - 10, SY(P.pole_length)); ctx.stroke();
+
+  // rail + end stops
+  ctx.strokeStyle = "#2a2f3d"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(SX(-P.x_limit), groundY + 16); ctx.lineTo(SX(P.x_limit), groundY + 16); ctx.stroke();
+  ctx.strokeStyle = "#f0626e"; ctx.lineWidth = 2;
+  for (const e of [-P.x_limit, P.x_limit]) {
+    ctx.beginPath(); ctx.moveTo(SX(e), groundY - 4); ctx.lineTo(SX(e), groundY + 26); ctx.stroke();
+  }
+
+  // pole-tip trail over the last ~1.6 s, which is where the energy pumping shows
+  ctx.strokeStyle = "#2c3f5e"; ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  for (let k = Math.max(0, i - 80); k <= i; k++) {
+    const [tx, , tth] = clip.frames[k];
+    const px = SX(tx + P.pole_length * Math.sin(tth));
+    const py = SY(P.pole_length * Math.cos(tth));
+    k === Math.max(0, i - 80) ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // force arrow
+  if (Math.abs(action) > 0.02) {
+    ctx.strokeStyle = "#ffb054"; ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.moveTo(SX(x), groundY + 4);
+    ctx.lineTo(SX(x) + action * 0.7 * scale, groundY + 4);
+    ctx.stroke();
+  }
+
+  // cart
+  const cw = 0.6 * scale, ch = 0.24 * scale;
+  ctx.fillStyle = "#424a5e";
+  ctx.beginPath(); ctx.roundRect(SX(x) - cw / 2, groundY - ch / 2, cw, ch, 4); ctx.fill();
+
+  // rod
+  const up = Math.abs(wrap(th)) < 0.2;
+  ctx.strokeStyle = up ? "#56d694" : "#e8ecf4";
+  ctx.lineWidth = 5; ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(SX(x), groundY - ch / 2);
+  ctx.lineTo(SX(x + P.pole_length * Math.sin(th)), SY(P.pole_length * Math.cos(th)));
+  ctx.stroke();
+  ctx.fillStyle = up ? "#56d694" : "#5eb0ff";
+  ctx.beginPath();
+  ctx.arc(SX(x + P.pole_length * Math.sin(th)), SY(P.pole_length * Math.cos(th)), 7, 0, 7);
+  ctx.fill();
+
+  // readouts
+  let sum = 0, upCount = 0;
+  for (let k = 0; k < i; k++) {
+    sum += clip.rewards[k];
+    const [, , kth, kthd] = clip.frames[k];
+    if (Math.abs(wrap(kth)) < 0.2 && Math.abs(kthd) < 1) upCount++;
+  }
+  const rNow = clip.rewards[Math.max(0, i - 1)] ?? 0;
+  p.meter.style.width = Math.max(0, Math.min(1, rNow)) * 100 + "%";
+  p.meter.style.background = rNow > 0.75 ? "#56d694" : rNow > 0.25 ? "#ffb054" : "#f0626e";
+  p.r.textContent = sum.toFixed(0);
+  p.a.innerHTML = (Math.abs(wrap(th)) * 180 / Math.PI).toFixed(0) + "&deg;";
+  p.u.textContent = Math.round(100 * upCount / Math.max(i, 1)) + "%";
+  p.f.textContent = (action * P.force_mag).toFixed(1) + " N";
+
+  // end-of-clip badge
+  const done = i >= clip.frames.length - 1;
+  let badge = p.head.querySelector(".badge");
+  if (done && !badge) {
+    badge = document.createElement("span");
+    badge.className = "badge";
+    p.head.appendChild(badge);
+  }
+  if (badge) {
+    badge.style.display = done ? "" : "none";
+    if (done) {
+      badge.textContent = clip.off_rail ? "hit the rail" : clip.solved ? "balanced" : "never balanced";
+      badge.className = "badge " + (clip.solved ? "good" : "bad");
+    }
+  }
+}
+
+const wrap = t => ((t + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+
+function render() {
+  panels.forEach(drawPanel);
+  document.getElementById("scrub").value = step;
+  document.getElementById("tick").textContent =
+    `${String(step).padStart(3, " ")} / ${MAXSTEP}   ${(step * P.dt).toFixed(1)} s`;
+}
+
+// ------------------------------------------------------------------ transport
+const playBtn = document.getElementById("play");
+function syncPlay() { playBtn.innerHTML = playing ? "&#10073;&#10073; pause" : "&#9654; play"; }
+playBtn.onclick = () => { playing = !playing; syncPlay(); };
+document.getElementById("rewind").onclick = () => { step = 0; render(); };
+document.getElementById("scrub").oninput = e => { step = +e.target.value; render(); };
+document.querySelectorAll(".spd").forEach(b => b.onclick = () => {
+  speed = +b.dataset.s;
+  document.querySelectorAll(".spd").forEach(o => o.classList.toggle("on", o === b));
+});
+window.addEventListener("keydown", e => {
+  if (e.code === "Space") { e.preventDefault(); playing = !playing; syncPlay(); }
+  if (e.key === "ArrowRight") { playing = false; syncPlay(); step = Math.min(MAXSTEP, step + 1); render(); }
+  if (e.key === "ArrowLeft") { playing = false; syncPlay(); step = Math.max(0, step - 1); render(); }
+});
+
+let last = performance.now();
+function loop(now) {
+  const dt = (now - last) / 1000; last = now;
+  if (playing) {
+    acc += dt * speed / P.dt;
+    while (acc >= 1) { acc -= 1; step = step >= MAXSTEP ? 0 : step + 1; }
+    render();
+  }
+  requestAnimationFrame(loop);
+}
+
+// ---------------------------------------------------------------- curve chart
+function drawChart() {
+  const svg = document.getElementById("chart");
+  const curve = D.curve;
+  if (!curve.length) return;
+  const W = 900, H = 230, L = 46, R = 12, T = 10, B = 26;
+  const maxEp = curve[curve.length - 1].episode || 1;
+  const maxR = Math.max(100, ...curve.map(p => p["return"]));
+  const px = ep => L + (ep / maxEp) * (W - L - R);
+  const py = r => H - B - (r / maxR) * (H - T - B);
+
+  let g = "";
+  for (let i = 0; i <= 4; i++) {
+    const r = (maxR / 4) * i;
+    g += `<line class="axis" x1="${L}" y1="${py(r)}" x2="${W - R}" y2="${py(r)}"/>
+          <text class="axis-text" x="${L - 8}" y="${py(r) + 4}" text-anchor="end">${Math.round(r)}</text>`;
+  }
+  for (let i = 0; i <= 4; i++) {
+    const ep = Math.round((maxEp / 4) * i);
+    g += `<text class="axis-text" x="${px(ep)}" y="${H - 8}" text-anchor="middle">${ep}</text>`;
+  }
+  g += `<text class="axis-text" x="${L}" y="${H - 8}" text-anchor="middle"></text>`;
+
+  const line = curve.map((p, i) => `${i ? "L" : "M"}${px(p.episode).toFixed(1)},${py(p["return"]).toFixed(1)}`).join("");
+  g += `<path d="${line}" fill="none" stroke="#2f5b86" stroke-width="1.4"/>`;
+
+  // 10-episode moving average, so the trend is readable through the noise
+  const k = 10, sm = [];
+  for (let i = 0; i < curve.length; i++) {
+    const from = Math.max(0, i - k + 1);
+    const win = curve.slice(from, i + 1);
+    sm.push({ episode: curve[i].episode, v: win.reduce((s, p) => s + p["return"], 0) / win.length });
+  }
+  g += `<path d="${sm.map((p, i) => `${i ? "L" : "M"}${px(p.episode).toFixed(1)},${py(p.v).toFixed(1)}`).join("")}"
+        fill="none" stroke="#5eb0ff" stroke-width="2.2"/>`;
+
+  D.clips.forEach((c, idx) => {
+    if (c.episode === null) return;
+    const cp = D.checkpoints.find(e => e.episode === c.episode);
+    if (!cp) return;
+    g += `<circle class="dot" cx="${px(c.episode)}" cy="${py(cp.eval_return)}" r="5"
+            data-idx="${idx}"><title>${c.label} — episode ${c.episode}, eval ${cp.eval_return.toFixed(0)}</title></circle>`;
+  });
+  svg.innerHTML = g;
+  svg.querySelectorAll(".dot").forEach(d => d.onclick = () => {
+    const i = +d.dataset.idx;
+    selected.has(i) ? selected.delete(i) : selected.add(i);
+    if (!selected.size) selected.add(i);
+    syncChips(); buildGrid();
+  });
+}
+
+syncChips(); syncPlay(); buildGrid(); drawChart(); requestAnimationFrame(loop);
+</script>
+</body>
+</html>

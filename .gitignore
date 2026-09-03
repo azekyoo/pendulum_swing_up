@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Training artifacts are reproducible from train.py, and the checkpoint
+# directory grows to tens of MB. The web replay data is committed instead,
+# so web/index.html works from a fresh clone without training first.
+runs/
