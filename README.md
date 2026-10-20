@@ -1,275 +1,263 @@
-# Pendulum Swing-Up
+# 振り上げ倒立振子
 
-A cart-pole swing-up environment with honest physics, a Soft Actor-Critic agent that
-learns it from scratch, and two viewers built for showing the learning process to an
-audience: an interactive pygame window and a web page that replays saved checkpoints
-side by side.
+正直な物理モデルによる台車型倒立振子の振り上げ環境と、それをゼロから学習する
+Soft Actor-Critic エージェント、そして学習の過程を聴衆に見せるために作った2つの
+ビューア（インタラクティブな pygame ウィンドウと、保存したチェックポイントを横並びで
+再生する Web ページ）です。
 
-Built as the demo for a lightning talk on reinforcement learning.
+強化学習についてのライトニングトークのデモとして作りました。
 
-![The trained agent swinging the rod up and balancing it](docs/agent-balancing.gif)
+![学習済みエージェントが棒を振り上げてバランスを取っている様子](docs/agent-balancing.gif)
 
-The rod is unpowered. The only control is a horizontal force on the cart, the rail
-is 2.4 m either side, and the force limit is too small to lift the rod directly —
-so it has to be swung up and then caught. The amber bar at the bottom is the
-force being applied; the rod turns green when it is genuinely balanced.
+棒そのものには動力がありません。操作できるのは台車への水平方向の力だけで、レールは
+左右それぞれ 2.4 m、力の上限は棒を直接持ち上げるには小さすぎます。そのため、振って
+勢いをつけてから、上で受け止める必要があります。下部のオレンジ色のバーは加えている力を
+表し、本当にバランスが取れているときは棒が緑色になります。
 
-## What this is, in plain terms
+## ざっくり言うと
 
-A cart sits on a short rail with a rod hinged on top of it, hanging down. You can only
-push the cart left or right — nothing turns the rod directly. The goal is to get the rod
-standing straight up and keep it there.
+短いレールの上に台車があり、その上に棒がヒンジでつながって垂れ下がっています。できるのは
+台車を左右に押すことだけで、棒を直接回すものは何もありません。目標は棒を真っ直ぐ上に
+立て、その状態を保つことです。
 
-That is harder than it sounds, and the push limit is set so you cannot just flick the rod
-up. You have to rock the cart back and forth to build up swing, then catch the rod at the
-top before it topples. Try it yourself in `play.py`; most people cannot do it.
+これは見た目以上に難しく、押す力の上限は棒を一気に跳ね上げられないように設定されています。
+台車を前後に揺らして振りを大きくし、倒れる前に頂点で棒を受け止めなければなりません。
+`play.py` で自分でも試せますが、ほとんどの人はできません。
 
-Here is everything in this repo, in order:
+このリポジトリの中身を順番に紹介します。
 
-1. **A simulator.** `swingup/physics.py` works out how the cart and rod move under
-   gravity, given whatever force you apply. The equations were derived rather than
-   copied, and there is a small amount of friction in the hinge and on the rail so the
-   rod does not swing forever. It steps forward 50 times per simulated second.
+1. **シミュレータ。** `swingup/physics.py` は、加えた力に応じて台車と棒が重力の下で
+   どう動くかを計算します。運動方程式はコピーではなく自分で導出したもので、ヒンジと
+   レールにわずかな摩擦を入れているため、棒が永遠に揺れ続けることはありません。
+   シミュレーション時間 1 秒あたり 50 回ステップを進めます。
 
-2. **A score.** `swingup/env.py` gives a number from 0 to 1 every step: 1 for standing
-   perfectly upright and still near the middle of the rail, 0 for hanging down. That
-   score is the *only* thing the learner is ever told. Nobody explains gravity, momentum,
-   or that swinging and balancing are two different jobs.
+2. **スコア。** `swingup/env.py` は毎ステップ 0 から 1 の数値を返します。レールの中央付近で
+   完全に直立して静止していれば 1、垂れ下がっていれば 0 です。学習器に伝えられるのは
+   このスコア *だけ* です。重力や運動量のこと、振り上げとバランスが別々の仕事であることは、
+   誰も教えていません。
 
-3. **A learner.** `swingup/sac.py` is a Soft Actor-Critic agent — a neural network that
-   tries things, remembers what happened, and gradually shifts towards whatever scored
-   better. About 200 lines, no machine-learning library beyond PyTorch itself.
+3. **学習器。** `swingup/sac.py` は Soft Actor-Critic エージェントです。いろいろ試し、
+   何が起きたかを記憶し、スコアが良かった行動へ少しずつ寄っていくニューラルネットワーク
+   です。約 200 行で、PyTorch 以外の機械学習ライブラリは使っていません。
 
-4. **Training with snapshots.** `train.py` runs 400 attempts of 10 seconds each and saves
-   a copy of the network every 10 attempts, plus a fair test score for each copy. That is
-   what makes it possible to replay any stage of learning afterwards, from useless to
-   expert.
+4. **スナップショット付きの学習。** `train.py` は 10 秒の試行を 400 回行い、10 回ごとに
+   ネットワークのコピーと、そのコピーの公平なテストスコアを保存します。これにより、
+   役立たずの段階から熟練の段階まで、学習のどの時点でも後から再生できます。
 
-5. **Two ways to watch.** `play.py` is an interactive window where you can play yourself,
-   hand over to any saved snapshot, and shove the rod to see it recover.
-   `web/index.html` plays several snapshots side by side, in lockstep, from an identical
-   starting position.
+5. **2つの見方。** `play.py` はインタラクティブなウィンドウで、自分で操作したり、保存済みの
+   任意のスナップショットに操作を任せたり、棒を突いて立て直す様子を見たりできます。
+   `web/index.html` は複数のスナップショットを、同じ初期状態から横並びで同期再生します。
 
-**What happened.** It flailed uselessly for 30 attempts, started swinging around attempt
-30, first touched vertical at attempt 40, briefly got *worse* around attempt 50, and was
-balancing reliably by attempt 70 — roughly two minutes of laptop CPU time. It plateaued at
-a score of ~448 out of a realistic maximum of ~450.
+**何が起きたか。** 最初の 30 回は無意味にじたばたし、30 回目あたりで振り始め、40 回目で
+初めて垂直に達し、50 回目あたりで一時的に *悪化* し、70 回目には安定してバランスを
+取れるようになりました。ノート PC の CPU で約 2 分です。最終的に、現実的な上限 約 450 に
+対して 約 448 のスコアで頭打ちになりました。
 
-![Training curve: flat until episode 30, a dip near 50, then a steep rise to a plateau](docs/training-curve.png)
+![学習曲線：エピソード 30 までは平坦、50 付近で落ち込み、その後急上昇して頭打ち](docs/training-curve.png)
 
-For comparison, `swingup/baseline.py` is the traditional engineered solution to the same
-problem. It scores about the same, ~449. The interesting difference is not the score but
-what each approach needed from a human, which is the table further down.
+比較のため、`swingup/baseline.py` に同じ問題に対する従来型の設計による解法を入れています。
+スコアはほぼ同じ 約 449 です。興味深い違いはスコアではなく、それぞれのアプローチが人間に
+何を求めたかで、それは後述の表にまとめています。
 
-## Quickstart
+## クイックスタート
 
 ```bash
 pip install -r requirements.txt
 
-python train.py --episodes 400 --run demo    # ~15 min on a CPU
-python play.py  --run demo                   # interactive viewer
-python export_replay.py --run demo           # build the web replay
-python plot_metrics.py --run demo --dark     # slide-ready training curve
-python make_gifs.py                          # README animations, from the replay
+python train.py --episodes 400 --run demo    # CPU で約 15 分
+python play.py  --run demo                   # インタラクティブビューア
+python export_replay.py --run demo           # Web リプレイを生成
+python plot_metrics.py --run demo --dark     # スライド用の学習曲線
+python make_gifs.py                          # README 用アニメーション（リプレイから生成）
 ```
 
-Then open `web/index.html` in a browser (it works straight off the filesystem, no server).
+その後、ブラウザで `web/index.html` を開いてください（サーバー不要、ファイルを直接開くだけで動きます）。
 
-## The task
+## タスク
 
-The rod hangs down. The cart can be pushed left or right, and that is the *only*
-input — nothing drives the hinge. The force limit is deliberately set so the rod
-cannot be flicked upright in one motion: the agent has to swing back and forth,
-adding energy on each pass, then catch the rod at the top and hold it.
+棒は垂れ下がっています。台車は左右に押すことができ、それが *唯一の* 入力です。ヒンジを
+直接駆動するものはありません。力の上限は、棒を一度の動きで跳ね上げられないように意図的に
+設定されています。エージェントは前後に振って、往復ごとにエネルギーを加え、頂点で棒を受け止めて
+保持しなければなりません。
 
-The rail is short enough that the obvious strategy of accelerating forever fails.
-Learning to pump energy *while staying near the middle of the rail* is the actual
-difficulty.
+レールは、ひたすら加速し続けるという素朴な戦略が失敗する程度に短くなっています。
+*レールの中央付近に留まりながら* エネルギーを送り込むことを学ぶのが、本当の難しさです。
 
-## Physics
+## 物理
 
-`swingup/physics.py`. Derived from the Lagrangian rather than copied, so damping and
-the rod's moment of inertia enter in the right places. `th` is measured from
-**upright**, so `th = 0` is the goal and `th = pi` is hanging.
+`swingup/physics.py`。コピーではなくラグランジアンから導出しているため、減衰と棒の慣性
+モーメントが正しい位置に入っています。`th` は **直立** から測るので、`th = 0` が目標、
+`th = pi` が垂れ下がった状態です。
 
-With `J = (4/3) m l²` the rod's inertia about the pivot, the accelerations solve
+`J = (4/3) m l²` をピボット周りの棒の慣性モーメントとすると、加速度は次を解いて得られます。
 
 ```
 | M+m          m l cos(th) | | xdd  |   | F - b_cart·xd + m l sin(th)·thd²  |
 | m l cos(th)  J           | | thdd | = | m g l sin(th) - b_pole·thd        |
 ```
 
-Integrated with **RK4** at 50 Hz, two sub-steps per control step. Euler was rejected
-on purpose: this is an energy-shaping task, and Euler's per-step energy drift is
-exactly the kind of thing an RL agent finds and exploits. The test suite pins the
-drift at under `1e-5` J over 50 simulated seconds.
+**RK4** で 50 Hz、1 制御ステップあたり 2 サブステップで積分しています。Euler 法は意図的に
+採用しませんでした。これはエネルギー整形のタスクであり、Euler 法のステップごとのエネルギー
+ドリフトは、まさに RL エージェントが見つけて悪用するたぐいのものだからです。テストでは、
+シミュレーション時間 50 秒でのドリフトが `1e-5` J 未満であることを確認しています。
 
-### On air resistance — is it a bad idea?
+### 空気抵抗は悪いアイデアか？
 
-It was a good idea, kept, but small. Two viscous terms: `b_pole = 0.02` at the hinge
-and `b_cart = 0.05` on the rail.
+良いアイデアなので残しましたが、小さくしています。粘性項が2つあり、ヒンジに
+`b_pole = 0.02`、レールに `b_cart = 0.05` です。
 
-- **Why keep it**: a frictionless rod conserves energy perfectly, so a policy can
-  park it upright and coast. With damping, holding the balance requires continuous
-  small corrections, which is *visibly* more interesting and matches what a real rig
-  does.
-- **Why keep it small**: damping fights the energy pumping. Turn it up and swing-up
-  takes many more oscillations, training gets slower, and at some point the force
-  limit can no longer overcome it at all.
-- **Why linear and not quadratic**: true aerodynamic drag goes as `v²`, and
-  `swingup/physics.py` could take a `b2·thd·|thd|` term easily. At the speeds here
-  (under ~10 rad/s on a 1.2 m rod) it is not visually distinguishable from the linear
-  term, and it adds a parameter to tune. Linear is the better trade for a talk.
+- **残す理由**：摩擦のない棒はエネルギーを完全に保存するので、方策は棒を直立させて
+  あとは惰性に任せることができてしまいます。減衰があると、バランスを保つために小さな修正を
+  絶えず続ける必要があり、それは *見た目にも* 面白く、実機の挙動とも一致します。
+- **小さくする理由**：減衰はエネルギーの送り込みと競合します。大きくすると振り上げに
+  必要な振動回数が増え、学習が遅くなり、ある時点で力の上限ではまったく打ち勝てなくなります。
+- **二乗ではなく線形にした理由**：本物の空気抵抗は `v²` に比例し、`swingup/physics.py` に
+  `b2·thd·|thd|` の項を加えるのは簡単です。しかしここでの速度（1.2 m の棒で 約 10 rad/s 未満）
+  では線形項と見た目で区別がつかず、調整するパラメータが増えるだけです。トーク用には線形のほうが
+  良いトレードオフです。
 
-Set `b_cart=0, b_pole=0` in `PhysicsParams` to compare — the textbook benchmark is
-frictionless, so that mode is worth having.
+比較するには `PhysicsParams` で `b_cart=0, b_pole=0` を設定してください。教科書的な
+ベンチマークは摩擦なしなので、このモードも用意しておく価値があります。
 
-## Reward
+## 報酬
 
-The whole task is specified by one line in `swingup/env.py`:
+タスク全体は `swingup/env.py` の1行で定義されています。
 
 ```python
-upright  = (1 + cos(th)) / 2                 # 0 hanging, 1 upright
-slow     = 1 / (1 + 0.1·thd²)                # 1 when the rod is still
-centered = 1 / (1 + 0.5·(x / x_limit)²)      # 1 at the middle of the rail
+upright  = (1 + cos(th)) / 2                 # 垂れ下がりで 0、直立で 1
+slow     = 1 / (1 + 0.1·thd²)                # 棒が静止しているとき 1
+centered = 1 / (1 + 0.5·(x / x_limit)²)      # レール中央で 1
 reward   = upright · (0.5 + 0.5·slow) · centered − 0.002·action²
 ```
 
-The terms **multiply**, and that is the important design decision. A sum would
-penalise angular velocity everywhere, including while hanging — which punishes the
-one behaviour the agent must discover first, and it never learns to swing at all.
-Multiplying gates the stillness penalty behind `upright`: spinning fast at the bottom
-costs almost nothing, spinning fast at the top costs most of the reward. There is a
-test asserting exactly that (`test_velocity_penalty_is_gated_by_uprightness`).
+各項は **掛け算** されており、これが重要な設計判断です。足し算にすると、垂れ下がっているときも
+含めてあらゆる場所で角速度にペナルティがかかります。それはエージェントが最初に発見しなければ
+ならない行動そのものを罰することになり、振ることをまったく学ばなくなります。掛け算にすると、
+静止のペナルティが `upright` で制御されます。下で速く回ってもほとんどコストはかかりませんが、
+上で速く回ると報酬の大部分を失います。まさにそれを確認するテスト
+（`test_velocity_penalty_is_gated_by_uprightness`）があります。
 
-Max reward is 1.0 per step, so 500 for a perfect 500-step episode. Swing-up itself
-costs ~60 steps, making ~450 the realistic ceiling.
+報酬は1ステップあたり最大 1.0 なので、500 ステップのエピソードで完璧なら 500 です。振り上げ
+そのものに 約 60 ステップかかるため、現実的な上限は 約 450 になります。
 
-## The agent
+## エージェント
 
-`swingup/sac.py` — Soft Actor-Critic, ~200 lines, no RL library, so any line of it can
-be pointed at mid-talk.
+`swingup/sac.py` — Soft Actor-Critic、約 200 行、RL ライブラリなし。トークの途中でどの行でも
+指し示せるようにしています。
 
-- **Observation (5)**: `[x/x_limit, xd/5, cos(th), sin(th), thd/10]`. `cos`/`sin`
-  instead of raw angle so the network never sees the discontinuity at ±pi; the
-  divisors keep every input near unit scale.
-- **Action (1)**: continuous force in `[-1, 1]`, scaled to ±15 N.
-- **Why SAC**: balancing needs fine force near vertical, which a discrete
-  left/none/right action space handles badly; and the learned entropy temperature
-  supplies the exploration needed to stumble onto the first successful swing without
-  anyone hand-tuning a noise schedule.
-- 128×128 MLPs, twin critics with `min` targets, target networks at `tau = 0.005`,
-  batch 256, `gamma = 0.99`.
+- **観測（5次元）**：`[x/x_limit, xd/5, cos(th), sin(th), thd/10]`。生の角度ではなく
+  `cos`/`sin` を使うことで、ネットワークが ±pi での不連続を見ないようにしています。
+  割る数は各入力をおおよそ単位スケールに保つためです。
+- **行動（1次元）**：`[-1, 1]` の連続値の力で、±15 N にスケーリングされます。
+- **SAC を選んだ理由**：バランスには垂直付近での細かい力の調整が必要で、左／なし／右の
+  離散行動空間はこれが苦手です。また、学習されるエントロピー温度が、誰もノイズスケジュールを
+  手で調整しなくても、最初の振り上げ成功にたどり着くための探索を提供してくれます。
+- 128×128 の MLP、`min` ターゲットを使うツインクリティック、`tau = 0.005` のターゲット
+  ネットワーク、バッチサイズ 256、`gamma = 0.99`。
 
-### The classical baseline
+### 古典的なベースライン
 
-`swingup/baseline.py` solves the same task without learning: Åström–Furuta energy
-pumping, switching to linear feedback within 0.6 rad of vertical. It scores **~449**.
+`swingup/baseline.py` は同じタスクを学習なしで解きます。Åström–Furuta のエネルギー
+送り込み制御で、垂直から 0.6 rad 以内に入ると線形フィードバックに切り替えます。
+スコアは **約 449** です。
 
-It is in the repo to be *compared against*, and the comparison is not about the score
-— SAC matches it. It is about what each one needed:
+これは *比較対象* としてリポジトリに入れており、比較のポイントはスコアではありません
+（SAC も同等のスコアです）。それぞれが何を必要としたかです。
 
-| | hand-tuned controller | SAC |
+| | 手動調整のコントローラ | SAC |
 |---|---|---|
-| needs the equations of motion | yes | no |
-| needs mass, length, gravity | yes | no |
-| needs hand-picked gains | 5 of them | none |
-| needs someone to notice swing-up and balancing are different problems | yes | no |
-| needs a reward function | no | yes |
-| needs ~200 episodes of experience | no | yes |
+| 運動方程式が必要 | はい | いいえ |
+| 質量・長さ・重力が必要 | はい | いいえ |
+| 手で選んだゲインが必要 | 5 個 | なし |
+| 振り上げとバランスが別の問題だと誰かが気づく必要 | はい | いいえ |
+| 報酬関数が必要 | いいえ | はい |
+| 約 200 エピソード分の経験が必要 | いいえ | はい |
 
-## Checkpoints, and replaying training
+## チェックポイントと学習の再生
 
-Every 10 episodes, `train.py` writes a checkpoint *and* runs a fixed-seed
-deterministic evaluation, so the score attached to episode 40 and the score attached
-to episode 300 are directly comparable.
+`train.py` は 10 エピソードごとにチェックポイントを書き出し、*さらに* シード固定の決定論的な
+評価を実行します。そのため、エピソード 40 のスコアとエピソード 300 のスコアを直接比較できます。
 
 ```
 runs/demo/
-  config.json      physics, reward and SAC settings for this run
-  metrics.csv      one row per training episode
+  config.json      この実行の物理・報酬・SAC の設定
+  metrics.csv      学習エピソードごとに 1 行
   checkpoints/     ep00000.pt, ep00010.pt, ... latest.pt
-  manifest.json    checkpoint index with each one's eval score
-  curve_dark.png   the training curve
+  manifest.json    各チェックポイントの評価スコア付きインデックス
+  curve_dark.png   学習曲線
 ```
 
-Episode 0 is saved **before any learning**, so the untrained flailing policy is always
-available as the "before" clip.
+エピソード 0 は **学習前に** 保存されるので、未学習でじたばたする方策をいつでも「ビフォー」の
+クリップとして使えます。
 
-![Episode 0, episode 40 and episode 400 playing side by side](docs/learning-stages.gif)
+![エピソード 0、40、400 を横並びで再生](docs/learning-stages.gif)
 
-*Three checkpoints, same starting state, same random seed, played in lockstep. Left:
-random pushes, off the rail in two seconds. Middle: it reaches the top but sails
-straight past it. Right: it arrives and holds. The only difference between the three
-is how many episodes of practice the policy had.*
+*3つのチェックポイントを、同じ初期状態、同じ乱数シードで同期再生しています。左：ランダムに
+押し、2 秒でレールから外れる。中央：頂点まで届くが、そのまま通り過ぎてしまう。右：頂点に達して
+保持する。3つの違いは、方策がどれだけ練習したかだけです。*
 
-`export_replay.py` picks story beats rather than evenly spaced episodes — untrained,
-first real swing, first time upright, first balance, best — because "the first time it
-ever touched vertical" is a better slide than "episode 120".
+`export_replay.py` は均等間隔のエピソードではなく、物語の節目（未学習、初めての本格的な振り、
+初めての直立、初めてのバランス、ベスト）を選びます。「エピソード 120」よりも「初めて垂直に
+達した瞬間」のほうがスライドとして良いからです。
 
-## Viewers
+## ビューア
 
-### `play.py` — interactive
+### `play.py` — インタラクティブ
 
-| key | |
+| キー | |
 |---|---|
-| `←` `→` | push the cart (human mode) |
-| `TAB` | cycle HUMAN → AGENT → BASELINE |
-| `[` `]` | previous / next checkpoint |
-| `0`–`9` | jump to 0%–90% through training |
-| `E` | jump to the best checkpoint |
-| `P` | poke the rod with a random impulse |
-| `,` `.` | shorten / lengthen the rod, live |
-| `R` `SPACE` `-` `=` `T` | reset, pause, slower, faster, trail |
+| `←` `→` | 台車を押す（人間モード） |
+| `TAB` | HUMAN → AGENT → BASELINE を切り替え |
+| `[` `]` | 前／次のチェックポイント |
+| `0`–`9` | 学習の 0%–90% の地点へジャンプ |
+| `E` | ベストのチェックポイントへジャンプ |
+| `P` | ランダムな衝撃で棒を突く |
+| `,` `.` | 棒をその場で短く／長くする |
+| `R` `SPACE` `-` `=` `T` | リセット、一時停止、遅く、速く、軌跡 |
 
-### `web/index.html` — replay
+### `web/index.html` — リプレイ
 
-Clip chips select any number of checkpoints and they play **in lockstep**, from an
-identical starting state with the same seed, so the only difference between panels is
-how much training the policy had. Includes the training curve with clickable
-checkpoint dots.
+クリップのチップで任意の数のチェックポイントを選ぶと、同じ初期状態・同じシードから
+**同期して** 再生されるので、パネル間の違いは方策の学習量だけになります。クリック可能な
+チェックポイントの点が付いた学習曲線も含まれています。
 
-## A 5-minute structure
+## 5分間の構成
 
-1. **(45 s) Show the problem.** `play.py` in HUMAN mode. Try to swing it up yourself.
-   Failing at it live is the best possible setup, and the audience immediately
-   understands that "push left or right" and "get the rod upright" are related by
-   something non-obvious.
-2. **(45 s) State the task the way the agent gets it.** Five numbers in, one number
-   out, and the reward line. Nobody told it about energy, momentum, or two-phase
-   control.
-3. **(90 s) Show learning.** The web page, three panels in lockstep: untrained,
-   first-time-upright, best. Then the curve — and point at the dip around episode 50,
-   where it *got worse*. That dip is the honest part of RL and everyone recognises it.
-4. **(60 s) Show what it wasn't told.** Press `P` and shove the balanced rod. It
-   recovers. Nobody wrote recovery behaviour; it falls out of having been rewarded for
-   being upright from every state it ever stumbled into.
-5. **(45 s) Land the comparison.** The classical controller table above. Same score,
-   completely different thing required from the engineer.
-6. **(15 s) Optional gut-punch.** Press `.` a few times to lengthen the rod. The
-   policy degrades, then fails. That is the sim-to-real gap, in one keystroke.
+1. **（45 秒）問題を見せる。** `play.py` を HUMAN モードで。自分で振り上げに挑戦します。
+   その場で失敗してみせるのが最高の導入で、「左右に押す」ことと「棒を直立させる」ことが、
+   一筋縄ではいかない関係にあることを聴衆はすぐに理解します。
+2. **（45 秒）エージェントが受け取る形でタスクを説明する。** 5つの数値が入り、1つの数値が
+   出る、そして報酬の1行。エネルギーも運動量も、2段階の制御のことも、誰も教えていません。
+3. **（90 秒）学習を見せる。** Web ページで3つのパネルを同期再生：未学習、初めての直立、ベスト。
+   次に学習曲線を見せ、エピソード 50 付近の *悪化した* 落ち込みを指し示します。その落ち込みこそが
+   RL の正直な部分で、誰もが身に覚えがあります。
+4. **（60 秒）教えていないことを見せる。** `P` を押して、バランスしている棒を突きます。立て直します。
+   誰も立て直しの動作を書いていません。それは、たまたま行き着いたあらゆる状態から直立することに
+   報酬を与えられた結果、自然に生まれたものです。
+5. **（45 秒）比較で締める。** 上の古典的コントローラとの比較表。同じスコアで、エンジニアに
+   求められるものはまったく違います。
+6. **（15 秒）おまけの一撃。** `.` を何回か押して棒を長くします。方策は劣化し、やがて失敗します。
+   それが sim-to-real ギャップを、キー1つで示したものです。
 
-## Things worth trying
+## 試してみる価値のあること
 
-- `python train.py --force-mag 10 --run weak` — a force limit low enough that the
-  hand-tuned controller stalls at 35° from vertical. Does SAC still find a way?
-- `python train.py --seed 3 --run seed3` — run-to-run variance in RL is large and
-  worth showing honestly; some seeds find the swing much later than others.
-- Set `RewardParams(vel_weight=0.0)` and retrain to see the reward design matter.
-- Add a `b2·thd·|thd|` quadratic drag term to `derivative()` and see whether a policy
-  trained without it still transfers.
+- `python train.py --force-mag 10 --run weak` — 手動調整のコントローラが垂直から 35° で
+  止まってしまうほど力の上限が低い設定。それでも SAC は方法を見つけられるか？
+- `python train.py --seed 3 --run seed3` — RL の実行ごとのばらつきは大きく、正直に見せる
+  価値があります。シードによっては振り上げを見つけるのがずっと遅くなります。
+- `RewardParams(vel_weight=0.0)` を設定して再学習し、報酬設計の重要性を確かめる。
+- `derivative()` に二乗抵抗の項 `b2·thd·|thd|` を加え、それなしで学習した方策がそのまま
+  通用するか確かめる。
 
-## Tests
+## テスト
 
 ```bash
 python -m pytest tests -q
 ```
 
-24 tests, mostly physics invariants: energy conservation without damping, horizontal
-momentum conservation, damping never *adding* energy, RK4 agreeing with a 10× finer
-integrator, hanging being stable and upright not, and the reward-shaping properties
-the agent depends on.
+24 個のテストがあり、ほとんどは物理の不変量です。減衰なしでのエネルギー保存、水平方向の
+運動量保存、減衰がエネルギーを *増やさない* こと、RK4 が 10 倍細かい積分器と一致すること、
+垂れ下がりが安定で直立が不安定であること、そしてエージェントが依存する報酬整形の性質です。
 
-These exist because a broken simulator does not produce a broken-looking policy — it
-produces a policy that scores brilliantly and behaves absurdly, and the bug surfaces
-only much later.
+これらのテストがあるのは、壊れたシミュレータは壊れて見える方策を生まないからです。生まれるのは
+素晴らしいスコアを出しながら不条理な振る舞いをする方策で、バグが表面化するのはずっと後になります。
